@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Box2D Logo Filler</title>
+    <style>
+        /* A simple, clean setup. The canvas will be our entire view. */
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #111; /* A very dark background */
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game-canvas"></canvas>
+
+    <script src="https://cdn.jsdelivr.net/npm/planck@latest/dist/planck.min.js"></script>
+
+    <script>
+        (function() {
+            // ==========================================================================
+            // 1. SETUP & CONSTANTS
+            // ==========================================================================
+            
+            const canvas = document.getElementById('game-canvas');
+            const ctx = canvas.getContext('2d');
+
+            // We'll set a fixed zoom level that frames the logo nicely.
+            const PIXELS_PER_METER = 40;
+            const CUBE_SIZE = 0.3; // Cubes are now a constant size.
+
+            // Global variables for the simulation
+            let world;
+            const camera = { x: 0, y: 0 }; // Static camera centered at the origin
+            const vec2 = planck.Vec2;
+
+
+            // ==========================================================================
+            // 2. WORLD & LEVEL CREATION (THE "SUNO" LOGO)
+            // This is the core of the new logic. We'll build each letter from
+            // several static, thin rectangular bodies.
+            // ==========================================================================
+
+            function createLevel() {
+                // A helper function to make creating static boxes cleaner.
+                // This is a great practice to avoid repeating code.
+                const createBox = (x, y, width, height, angle = 0) => {
+                    const body = world.createBody({
+                        position: vec2(x, -y),
+                        angle: angle,
+                    });
+                    body.createFixture(planck.Box(width / 2, height / 2));
+                    // We can store a color on static bodies too, to make them visible.
+                    body.setUserData({ color: '#222' }); // A very dark gray
+                };
+
+                const letterWidth = 5;
+                const letterHeight = 8;
+                const thickness = 0.25; //0.5 originially
+                const spacing = 7; // Space between the center of each letter
+
+                // --- Build the letter 'S' (Position: x = -1.5 * spacing) ---
+                const s_x = -1.5 * spacing;
+                createBox(s_x, letterHeight / 2, letterWidth, thickness); // Top bar
+                createBox(s_x, 0, letterWidth, thickness);                // Middle bar
+                createBox(s_x, -letterHeight / 2, letterWidth, thickness); // Bottom bar
+                createBox(s_x - letterWidth / 2 + thickness / 2, letterHeight / 4, thickness, letterHeight / 2); // Top-left vertical
+                createBox(s_x + letterWidth / 2 - thickness / 2, -letterHeight / 4, thickness, letterHeight / 2); // Bottom-right vertical
+                
+                // --- Build the letter 'U' (Position: x = -0.5 * spacing) ---
+                const u_x = -0.5 * spacing;
+                createBox(u_x - letterWidth / 2 + thickness / 2, 0, thickness, letterHeight); // Left vertical
+                createBox(u_x + letterWidth / 2 - thickness / 2, 0, thickness, letterHeight); // Right vertical
+                createBox(u_x, -letterHeight / 2 + thickness / 2, letterWidth, thickness); // Bottom bar
+
+                // --- Build the letter 'N' (Position: x = 0.5 * spacing) ---
+                const n_x = 0.5 * spacing;
+                createBox(n_x - letterWidth / 2 + thickness / 2, 0, thickness, letterHeight); // Left vertical
+                createBox(n_x + letterWidth / 2 - thickness / 2, 0, thickness, letterHeight); // Right vertical
+                // The diagonal is a rotated box. We calculate the angle and length.
+                const diagonalLength = Math.sqrt(letterWidth*letterWidth + letterHeight*letterHeight) * 0.9;
+                const diagonalAngle = -Math.atan(letterWidth / letterHeight);
+                createBox(n_x, 0, diagonalLength, thickness, diagonalAngle);
+                
+                // --- Build the letter 'O' (Position: x = 1.5 * spacing) ---
+                const o_x = 1.5 * spacing;
+                createBox(o_x, letterHeight / 2 - thickness / 2, letterWidth, thickness); // Top bar
+                createBox(o_x, -letterHeight / 2 + thickness / 2, letterWidth, thickness); // Bottom bar
+                createBox(o_x - letterWidth / 2 + thickness / 2, 0, thickness, letterHeight); // Left vertical
+                createBox(o_x + letterWidth / 2 - thickness / 2, 0, thickness, letterHeight); // Right vertical
+            }
+
+
+            // ==========================================================================
+            // 3. CUBE CREATION
+            // Simplified from the previous version. No shrinking, takes a position.
+            // ==========================================================================
+
+            function createCube(x, y) {
+                const body = world.createDynamicBody({
+                    position: vec2(x, -y + 2),
+                });
+                
+                body.createFixture(planck.Box(CUBE_SIZE / 2, CUBE_SIZE / 2), {
+                    density: 1.0,
+                    friction: 0.5,
+                    restitution: 0.1
+                });
+                
+                // Each cube gets a new random color.
+                const randomColor = `hsl(${Math.random() * 360}, 100%, 70%)`;
+                body.setUserData({ color: randomColor });
+            }
+
+
+            // ==========================================================================
+            // 4. DRAWING & RENDERING (Mostly unchanged)
+            // ==========================================================================
+            
+            function draw() {
+                ctx.fillStyle = '#111';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.save();
+                ctx.translate(canvas.width / 2, canvas.height / 2);
+                ctx.scale(PIXELS_PER_METER, PIXELS_PER_METER);
+                ctx.translate(-camera.x, -camera.y);
+
+                for (let body = world.getBodyList(); body; body = body.getNext()) {
+                    // Get the color from userData. Works for both static and dynamic bodies.
+                    const color = body.getUserData()?.color || '#888';
+                    ctx.fillStyle = color;
+
+                    for (let fixture = body.getFixtureList(); fixture; fixture = fixture.getNext()) {
+                        const shape = fixture.getShape();
+                        const position = body.getPosition();
+                        const angle = body.getAngle();
+                        
+                        ctx.save();
+                        ctx.translate(position.x, position.y);
+                        ctx.rotate(angle);
+
+                        // We only need to draw boxes for this simulation.
+                        const vertices = shape.m_vertices;
+                        ctx.beginPath();
+                        ctx.moveTo(vertices[0].x, vertices[0].y);
+                        for (let i = 1; i < vertices.length; i++) {
+                            ctx.lineTo(vertices[i].x, vertices[i].y);
+                        }
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        ctx.restore();
+                    }
+                }
+                ctx.restore();
+            }
+
+
+            // ==========================================================================
+            // 5. GAME LOOP
+            // Simplified: just steps the physics and draws the scene.
+            // ==========================================================================
+            
+            function mainLoop() {
+                world.step(1 / 60);
+                draw();
+                requestAnimationFrame(mainLoop);
+            }
+
+            // ==========================================================================
+            // 6. INITIALIZATION & AUTOMATION
+            // All the new automation logic goes here.
+            // ==========================================================================
+
+            function init() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+
+                world = planck.World({
+                    gravity: vec2(0, 30) // A bit stronger gravity for a faster fill
+                });
+                
+                createLevel();
+
+                // --- NEW: Automated Filling Logic ---
+                // Define the emitter points, one inside each letter.
+                const emitterPositions = [
+                    vec2(-10.5, 5), // Inside S
+                    vec2(-10.5, 1),
+                    vec2(-3.5, 5),  // Inside U
+                    vec2(3.5, 5),   // Inside N
+                    vec2(10.5, 5)   // Inside O
+                ];
+
+                // Use setInterval to create a stream of cubes from each emitter.
+                const fillInterval = setInterval(() => {
+                    emitterPositions.forEach(pos => {
+                        // Add a little randomness to the spawn position for a more natural fill.
+                        const jitterX = (Math.random() - 0.5) * 2;
+                        createCube(pos.x + jitterX, pos.y);
+                    });
+                }, 50); // Create new cubes every 50 milliseconds.
+
+                // Use setTimeout to stop the filling after 5 seconds.
+                setTimeout(() => {
+                    clearInterval(fillInterval);
+                    console.log("Finished filling logo.");
+                }, 10000); // 5000 milliseconds = 5 seconds
+            }
+
+            // Start everything!
+            init();
+            requestAnimationFrame(mainLoop);
+
+        })();
+    </script>
+</body>
+</html>
